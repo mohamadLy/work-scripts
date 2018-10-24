@@ -1,0 +1,106 @@
+#!/usr/bin/expect
+exp_internal 0
+ 
+set prompt "(*)*#"
+set enable_prompt "(*)*\>"
+set controllerip [lindex $argv 0]
+set timeout 300
+ 
+spawn ssh -o StrictHostKeyChecking=no admin@10.216.110.221
+expect "password:"
+send "admins\r"
+expect {
+                $prompt {
+                                send "no paging\r"
+                }
+                $enable_prompt {
+                                send "enable\r"
+                                expect "Password:"
+                                send "enable\r"
+                                exp_continue
+                }
+}
+
+# Enable centralized licensing
+expect $prompt
+if {[string match "*mynode*" $expect_out(buffer)]} {
+                send "change-config-node /mm\r"
+                expect $prompt
+                send "license-pool-profile-root rfp-license-enable\r"
+                expect $prompt
+                send "license-pool-profile-root pefng-licenses-enable\r"
+                expect $prompt
+                send "write memory\r"
+                expect $prompt
+                send "change-config-node /mm/mynode\r"
+                expect $prompt
+}
+
+# Disable console password
+send "ap system-profile default no ap-console-protection\r"
+expect $prompt
+
+# if mm
+expect $prompt
+send "cd md"
+expect $prompt
+
+# Start configuration
+send "configure terminal\r"
+expect $prompt
+
+# ht-ssid-profile setup 
+send "wlan ht-ssid-profile \"default-htssid_prof\""
+expect $prompt
+send "high-throughput-enable"
+expect $prompt
+send "very-high-throughput-enable"
+expect $prompt
+send "80MHz-enable"
+expect $prompt
+send "40MHz-enable"
+expect $prompt
+
+# aaa profile setup
+send "aaa authentication dot1x \"dot1x_prof-dsg37\"" 
+expect $prompt
+send "aaa profile \"default-aaa_prof\" authentication-dot1x \"dot1x_prof-dsg37\""
+expect $prompt
+send "aaa profile \"license-vap-aaa_prof\" initial-role \"authenticated\""
+expect $prompt
+
+# ssid profile setup
+send "wlan ssid-profile \"default-vap-ssid_prof\"" 
+expect $prompt
+send "essid \"N32-default\""
+expect $prompt
+send "ht-ssid-profile \"defaul-htssid_prof\""
+expect $prompt
+send "wpa-passphrase 123456789"
+expect $prompt
+send "opmode wpa2-psk-aes"
+expect $prompt
+
+# setup for vap configuration
+send "wlan virtual-ap "default-vap_prof" "# create vap profile
+ssid-profile "default-vap-ssid_prof"
+aaa-profile "default-aaa_prof"
+forward-mode "tunnel"
+
+
+# ap profile setup
+ap system-profile "apsys_prof-eeb56"
+no rap-dhcp-server-vlan
+
+#ap group setup
+ap-group "ml-default-group" ap-system-profile "apsys_prof-eeb56"
+ap-group "ml-default-group" virtual-ap "default-vap_prof"
+
+expect $prompt
+send "write memory\r"
+# Restart all APs
+expect $prompt
+send "apboot all local\r"
+ 
+# Always wait for prompt before exiting
+expect $prompt
